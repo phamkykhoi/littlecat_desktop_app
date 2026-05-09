@@ -82,7 +82,8 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: npm run build -- --bundles dmg
         env:
-          APPLE_SIGNING_IDENTITY: ""
+          # "-" = ad-hoc signing, không cần certificate, bỏ qua keychain lookup
+          APPLE_SIGNING_IDENTITY: "-"
 
       - name: Upload Windows installer
         if: matrix.os == 'windows-latest'
