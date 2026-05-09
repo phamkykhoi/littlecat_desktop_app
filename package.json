@@ -1,0 +1,17 @@
+{
+  "name": "hoc-long-tieng",
+  "version": "0.1.0",
+  "description": "Học Lồng Tiếng - Desktop App cho trẻ em",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "download-ffmpeg": "bash scripts/download-ffmpeg.sh"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  }
+}
