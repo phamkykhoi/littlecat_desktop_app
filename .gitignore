@@ -62,3 +62,7 @@ logs/
 *.tmp
 *.temp
 package-lock.json
+
+# ── Signing Keys (bảo mật, không push lên GitHub) ──
+src-tauri/*.key
+src-tauri/*.key.pub
