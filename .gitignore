@@ -33,6 +33,7 @@ src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe
 .AppleDouble
 .LSOverride
 Icon?
+!src-tauri/icons/
 ._*
 .Spotlight-V8
 .Trashes
