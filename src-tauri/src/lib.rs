@@ -7,6 +7,7 @@ use commands::file_ops::{
     delete_temp_file, generate_filename, get_file_size, open_save_dialog, read_file_as_base64,
     save_file_to_path, save_temp_file,
 };
+use commands::updater::{check_update, install_update};
 
 /// Polyfill Fullscreen API cho WKWebView trên macOS.
 /// WKWebView báo document.fullscreenEnabled = false theo mặc định,
@@ -700,6 +701,145 @@ const TOOLBAR_SCRIPT: &str = r#"
   }
 
   console.log('[HLT] 🎬 Học Lồng Tiếng toolbar đã khởi động!');
+
+  // ── Auto Update Check ────────────────────────────────────────────────────
+  async function checkForUpdate() {
+    if (typeof window.__TAURI__ === 'undefined') return;
+    try {
+      const info = await window.__TAURI__.core.invoke('check_update');
+      if (info.available) {
+        showUpdateDialog(info);
+      }
+    } catch (e) {
+      console.log('[HLT] Kiểm tra update thất bại (offline?):', e);
+    }
+  }
+
+  function showUpdateDialog(info) {
+    // Tạo dialog thông báo update
+    const dialog = document.createElement('div');
+    dialog.id = 'hlt-update-dialog';
+    dialog.style.cssText = `
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.6); z-index: 2147483646;
+      display: flex; align-items: center; justify-content: center;
+      font-family: 'Nunito', Arial, sans-serif;
+      backdrop-filter: blur(4px);
+    `;
+    dialog.innerHTML = `
+      <div style="
+        background: linear-gradient(135deg, #1a1a2e, #16213e);
+        border: 3px solid rgba(102,126,234,0.6);
+        border-radius: 28px; padding: 36px 40px; max-width: 420px; width: 90%;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.6); text-align: center; color: white;
+      ">
+        <div style="font-size: 56px; margin-bottom: 12px;">🎉</div>
+        <h2 style="font-size: 22px; font-weight: 900; margin-bottom: 8px; color: #a78bfa;">
+          Có bản cập nhật mới!
+        </h2>
+        <div style="
+          background: rgba(102,126,234,0.15); border-radius: 12px;
+          padding: 12px 16px; margin: 16px 0; font-size: 14px; color: #c4b5fd;
+        ">
+          <div style="margin-bottom: 4px;">
+            📦 Phiên bản <strong style="color:#fff">${info.version}</strong>
+            đã sẵn sàng
+          </div>
+          <div style="font-size: 12px; color: #8b9cf4;">
+            (Hiện tại: ${info.current_version})
+          </div>
+        </div>
+        ${info.notes ? `
+        <div style="
+          font-size: 13px; color: #94a3b8; text-align: left;
+          background: rgba(255,255,255,0.05); border-radius: 10px;
+          padding: 10px 14px; margin-bottom: 20px; max-height: 80px; overflow-y: auto;
+        ">${info.notes}</div>` : ''}
+
+        <div id="hlt-update-progress-wrap" style="display:none; margin-bottom: 16px;">
+          <div style="font-size: 13px; color: #a78bfa; margin-bottom: 8px;" id="hlt-update-progress-label">
+            📥 Đang tải xuống...
+          </div>
+          <div style="background: rgba(255,255,255,0.15); border-radius: 10px; height: 12px; overflow: hidden;">
+            <div id="hlt-update-progress-bar" style="
+              height: 100%; width: 0%;
+              background: linear-gradient(90deg, #7c3aed, #a78bfa);
+              border-radius: 10px; transition: width 0.3s ease;
+            "></div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 12px; justify-content: center;">
+          <button id="hlt-update-now" style="
+            background: linear-gradient(135deg, #7c3aed, #a78bfa);
+            color: white; border: none; border-radius: 16px;
+            padding: 14px 28px; font-size: 16px; font-weight: 900;
+            font-family: inherit; cursor: pointer;
+            box-shadow: 0 4px 15px rgba(124,58,237,0.5);
+            transition: all 0.2s;
+          ">✅ Cập nhật ngay</button>
+          <button id="hlt-update-skip" style="
+            background: rgba(255,255,255,0.1); color: #94a3b8;
+            border: 1px solid rgba(255,255,255,0.15); border-radius: 16px;
+            padding: 14px 22px; font-size: 15px; font-weight: 700;
+            font-family: inherit; cursor: pointer; transition: all 0.2s;
+          ">⏭ Bỏ qua</button>
+        </div>
+        <p style="font-size: 12px; color: #475569; margin-top: 14px;">
+          App sẽ tự khởi động lại sau khi cập nhật xong 🔄
+        </p>
+      </div>
+    `;
+    document.body.appendChild(dialog);
+
+    // Nút bỏ qua
+    document.getElementById('hlt-update-skip').onclick = () => dialog.remove();
+
+    // Nút cập nhật
+    document.getElementById('hlt-update-now').onclick = async () => {
+      const btnNow = document.getElementById('hlt-update-now');
+      const btnSkip = document.getElementById('hlt-update-skip');
+      const progressWrap = document.getElementById('hlt-update-progress-wrap');
+      const progressBar = document.getElementById('hlt-update-progress-bar');
+      const progressLabel = document.getElementById('hlt-update-progress-label');
+
+      btnNow.disabled = true;
+      btnNow.textContent = '⏳ Đang tải...';
+      btnSkip.style.display = 'none';
+      progressWrap.style.display = 'block';
+
+      // Lắng nghe progress từ Rust
+      let totalDownloaded = 0;
+      const unlisten = await window.__TAURI__.event.listen('update-progress', (event) => {
+        const { downloaded, total, percent } = event.payload;
+        totalDownloaded += downloaded;
+        progressBar.style.width = Math.min(percent, 100) + '%';
+        if (total) {
+          const mb = (totalDownloaded / 1024 / 1024).toFixed(1);
+          const totalMb = (total / 1024 / 1024).toFixed(1);
+          progressLabel.textContent = `📥 Đang tải: ${mb}MB / ${totalMb}MB (${Math.round(percent)}%)`;
+        } else {
+          progressLabel.textContent = `📥 Đang tải... ${Math.round(percent)}%`;
+        }
+      });
+
+      try {
+        await window.__TAURI__.core.invoke('install_update');
+        unlisten();
+        progressLabel.textContent = '✅ Xong! Đang khởi động lại...';
+        progressBar.style.width = '100%';
+      } catch (err) {
+        unlisten();
+        progressLabel.textContent = '❌ Lỗi: ' + err;
+        btnNow.disabled = false;
+        btnNow.textContent = '🔄 Thử lại';
+        btnSkip.style.display = 'block';
+      }
+    };
+  }
+
+  // Kiểm tra update sau 3 giây khi app mở (không làm phiền ngay lập tức)
+  setTimeout(checkForUpdate, 3000);
 })();
 "#;
 
@@ -712,6 +852,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             // Tạo window bằng code để dùng được initialization_script,
             // đảm bảo polyfill chạy trước mọi JS của trang web (kể cả khi navigate).
@@ -749,6 +890,9 @@ pub fn run() {
             generate_filename,
             get_file_size,
             read_file_as_base64,
+            // Updater
+            check_update,
+            install_update,
         ])
         .run(tauri::generate_context!())
         .expect("Lỗi khởi động ứng dụng Học Lồng Tiếng");

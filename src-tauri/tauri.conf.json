@@ -34,5 +34,15 @@
       "digestAlgorithm": "sha256",
       "timestampUrl": ""
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDJCNjM3MTU2QUQxRkUzQzAKUldUQTR4K3RWbkZqSzd3QjE4QmNHMlUyS2F0NVYwRzZRY1p2Zi8welFNRUtjWGc1b2JPK052dWcK",
+      "endpoints": [
+        "https://github.com/phamkykhoi/littlecat_desktop_app/releases/latest/download/latest.json"
+      ],
+      "dialog": false,
+      "timeout": 30000
+    }
   }
 }

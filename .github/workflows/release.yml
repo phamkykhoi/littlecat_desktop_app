@@ -1,0 +1,221 @@
+name: Release Học Lồng Tiếng
+
+# Trigger: push tag v* (vd: v1.0.0, v1.1.0)
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  # ── Build macOS (Apple Silicon + Intel) ────────────────────────────────────
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target:
+          - aarch64-apple-darwin    # Apple Silicon
+          - x86_64-apple-darwin     # Intel Mac
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Node dependencies
+        run: npm install
+
+      - name: Download FFmpeg binary
+        run: |
+          mkdir -p src-tauri/binaries
+          if [ "${{ matrix.target }}" = "aarch64-apple-darwin" ]; then
+            curl -L "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip" -o /tmp/ffmpeg.zip
+            unzip -o /tmp/ffmpeg.zip -d /tmp/ffmpeg-extract/
+            cp /tmp/ffmpeg-extract/ffmpeg src-tauri/binaries/ffmpeg-aarch64-apple-darwin
+            chmod +x src-tauri/binaries/ffmpeg-aarch64-apple-darwin
+          else
+            curl -L "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip" -o /tmp/ffmpeg.zip
+            unzip -o /tmp/ffmpeg.zip -d /tmp/ffmpeg-extract/
+            cp /tmp/ffmpeg-extract/ffmpeg src-tauri/binaries/ffmpeg-x86_64-apple-darwin
+            chmod +x src-tauri/binaries/ffmpeg-x86_64-apple-darwin
+          fi
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Học Lồng Tiếng ${{ github.ref_name }}'
+          releaseBody: |
+            ## 🎬 Học Lồng Tiếng ${{ github.ref_name }}
+
+            ### Cài đặt:
+            - **macOS**: Tải file `.dmg`, mở và kéo vào Applications
+            - **Windows**: Tải file `.msi` hoặc `.exe`, chạy và làm theo hướng dẫn
+
+            ### Thay đổi:
+            Xem commit history để biết chi tiết.
+          releaseDraft: false
+          prerelease: false
+          args: --target ${{ matrix.target }}
+
+  # ── Build Windows (x64) ─────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Node dependencies
+        run: npm install
+
+      - name: Download FFmpeg for Windows
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries
+          $url = "https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip"
+          Invoke-WebRequest -Uri $url -OutFile "$env:TEMP\ffmpeg-win.zip"
+          Expand-Archive -Path "$env:TEMP\ffmpeg-win.zip" -DestinationPath "$env:TEMP\ffmpeg-win" -Force
+          $ffmpegExe = Get-ChildItem -Path "$env:TEMP\ffmpeg-win" -Filter "ffmpeg.exe" -Recurse | Select-Object -First 1
+          Copy-Item $ffmpegExe.FullName -Destination "src-tauri/binaries/ffmpeg-x86_64-pc-windows-msvc.exe"
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Học Lồng Tiếng ${{ github.ref_name }}'
+          releaseBody: |
+            ## 🎬 Học Lồng Tiếng ${{ github.ref_name }}
+          releaseDraft: false
+          prerelease: false
+
+  # ── Tạo latest.json cho Auto-Update ────────────────────────────────────────
+  create-update-manifest:
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
+
+      - name: Download release assets info
+        uses: actions/github-script@v7
+        id: assets
+        with:
+          script: |
+            const release = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: context.ref.replace('refs/tags/', '')
+            });
+            core.setOutput('upload_url', release.data.upload_url);
+            core.setOutput('release_id', release.data.id);
+
+      - name: Create latest.json update manifest
+        uses: actions/github-script@v7
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+          RELEASE_ID: ${{ steps.assets.outputs.release_id }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const version = process.env.VERSION;
+            const tag = `v${version}`;
+            const baseUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/releases/download/${tag}`;
+
+            const release = await github.rest.repos.getRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: parseInt(process.env.RELEASE_ID),
+            });
+
+            const assets = release.data.assets;
+            const findSig = (name) => {
+              const a = assets.find(a => a.name === name + '.sig');
+              return a ? `${baseUrl}/${name}.sig` : '';
+            };
+
+            const manifest = {
+              version: tag,
+              notes: `Học Lồng Tiếng ${tag} - Xem chi tiết tại GitHub Releases`,
+              pub_date: new Date().toISOString(),
+              platforms: {
+                "darwin-aarch64": {
+                  url: `${baseUrl}/Học.Lồng.Tiếng_${version}_aarch64.dmg`,
+                  signature: ""
+                },
+                "darwin-x86_64": {
+                  url: `${baseUrl}/Học.Lồng.Tiếng_${version}_x64.dmg`,
+                  signature: ""
+                },
+                "windows-x86_64": {
+                  url: `${baseUrl}/Học.Lồng.Tiếng_${version}_x64-setup.exe`,
+                  signature: ""
+                }
+              }
+            };
+
+            // Điền signature từ .sig files
+            for (const asset of assets) {
+              if (asset.name.endsWith('.sig')) {
+                const sigContent = await fetch(asset.browser_download_url).then(r => r.text());
+                if (asset.name.includes('aarch64') && asset.name.includes('.dmg')) {
+                  manifest.platforms['darwin-aarch64'].signature = sigContent.trim();
+                  manifest.platforms['darwin-aarch64'].url = `${baseUrl}/${asset.name.replace('.sig','')}`;
+                } else if (asset.name.includes('x64') && asset.name.includes('.dmg')) {
+                  manifest.platforms['darwin-x86_64'].signature = sigContent.trim();
+                  manifest.platforms['darwin-x86_64'].url = `${baseUrl}/${asset.name.replace('.sig','')}`;
+                } else if (asset.name.includes('.exe') || asset.name.includes('.msi')) {
+                  manifest.platforms['windows-x86_64'].signature = sigContent.trim();
+                  manifest.platforms['windows-x86_64'].url = `${baseUrl}/${asset.name.replace('.sig','')}`;
+                }
+              }
+            }
+
+            const { Octokit } = require('@octokit/rest');
+            const content = JSON.stringify(manifest, null, 2);
+            const encoded = Buffer.from(content).toString('base64');
+
+            // Upload latest.json lên release
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: parseInt(process.env.RELEASE_ID),
+              name: 'latest.json',
+              data: content,
+            });
+
+            console.log('✅ latest.json uploaded:', content);
