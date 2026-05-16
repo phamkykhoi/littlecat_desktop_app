@@ -8,6 +8,138 @@ use commands::file_ops::{
     save_temp_file,
 };
 
+/// Polyfill Fullscreen API cho WKWebView trên macOS.
+/// WKWebView báo document.fullscreenEnabled = false theo mặc định,
+/// khiến website hiện lỗi "Trình duyệt không hỗ trợ Fullscreen".
+/// Script này patch lại để dùng Tauri native window fullscreen làm fallback.
+const FULLSCREEN_POLYFILL: &str = r#"
+(function() {
+  'use strict';
+
+  // ── 1. Patch document.fullscreenEnabled → true ──────────────────────────
+  try {
+    Object.defineProperty(document, 'fullscreenEnabled', {
+      get: function() { return true; },
+      configurable: true,
+    });
+    Object.defineProperty(document, 'webkitFullscreenEnabled', {
+      get: function() { return true; },
+      configurable: true,
+    });
+    Object.defineProperty(document, 'mozFullScreenEnabled', {
+      get: function() { return true; },
+      configurable: true,
+    });
+  } catch(e) {}
+
+  // ── 2. Theo dõi element đang fullscreen (giả lập) ───────────────────────
+  var _fullscreenElement = null;
+
+  try {
+    Object.defineProperty(document, 'fullscreenElement', {
+      get: function() { return _fullscreenElement; },
+      configurable: true,
+    });
+    Object.defineProperty(document, 'webkitFullscreenElement', {
+      get: function() { return _fullscreenElement; },
+      configurable: true,
+    });
+  } catch(e) {}
+
+  // ── 3. Helper gọi Tauri native fullscreen ───────────────────────────────
+  function tauriSetFullscreen(enable) {
+    try {
+      if (window.__TAURI__ && window.__TAURI__.window) {
+        window.__TAURI__.window.getCurrentWindow().setFullscreen(enable);
+      }
+    } catch(e) {
+      console.warn('[HLT Fullscreen]', e);
+    }
+  }
+
+  function dispatchFullscreenChange(target) {
+    var evt = new Event('fullscreenchange', { bubbles: true });
+    try { (target || document).dispatchEvent(evt); } catch(e) {}
+    try { document.dispatchEvent(new Event('fullscreenchange')); } catch(e) {}
+    try { document.dispatchEvent(new Event('webkitfullscreenchange')); } catch(e) {}
+  }
+
+  // ── 4. Patch requestFullscreen ──────────────────────────────────────────
+  var _origRequest = Element.prototype.requestFullscreen
+                  || Element.prototype.webkitRequestFullscreen;
+
+  function patchedRequestFullscreen(opts) {
+    var el = this;
+    if (_origRequest) {
+      return Promise.resolve()
+        .then(function() { return _origRequest.call(el, opts); })
+        .catch(function() {
+          // Native không hoạt động → dùng Tauri
+          _fullscreenElement = el;
+          tauriSetFullscreen(true);
+          setTimeout(function() { dispatchFullscreenChange(el); }, 50);
+          return Promise.resolve();
+        });
+    }
+    _fullscreenElement = el;
+    tauriSetFullscreen(true);
+    setTimeout(function() { dispatchFullscreenChange(el); }, 50);
+    return Promise.resolve();
+  }
+
+  Element.prototype.requestFullscreen        = patchedRequestFullscreen;
+  Element.prototype.webkitRequestFullscreen  = patchedRequestFullscreen;
+  Element.prototype.webkitRequestFullScreen  = patchedRequestFullscreen;
+  Element.prototype.mozRequestFullScreen     = patchedRequestFullscreen;
+  Element.prototype.msRequestFullscreen      = patchedRequestFullscreen;
+
+  // ── 5. Patch exitFullscreen ─────────────────────────────────────────────
+  var _origExit = document.exitFullscreen
+               || document.webkitExitFullscreen;
+
+  function patchedExitFullscreen() {
+    if (_origExit) {
+      return Promise.resolve()
+        .then(function() { return _origExit.call(document); })
+        .catch(function() {
+          _fullscreenElement = null;
+          tauriSetFullscreen(false);
+          setTimeout(function() { dispatchFullscreenChange(null); }, 50);
+          return Promise.resolve();
+        });
+    }
+    _fullscreenElement = null;
+    tauriSetFullscreen(false);
+    setTimeout(function() { dispatchFullscreenChange(null); }, 50);
+    return Promise.resolve();
+  }
+
+  document.exitFullscreen       = patchedExitFullscreen;
+  document.webkitExitFullscreen = patchedExitFullscreen;
+  document.mozCancelFullScreen  = patchedExitFullscreen;
+  document.msExitFullscreen     = patchedExitFullscreen;
+
+  // ── 6. Sync khi Tauri thay đổi fullscreen (vd: phím Escape) ────────────
+  document.addEventListener('DOMContentLoaded', function() {
+    if (window.__TAURI__ && window.__TAURI__.event) {
+      window.__TAURI__.event.listen('tauri://resize', function() {
+        // Nếu window không còn fullscreen thì reset state
+        if (window.__TAURI__.window) {
+          window.__TAURI__.window.getCurrentWindow().isFullscreen().then(function(fs) {
+            if (!fs && _fullscreenElement) {
+              _fullscreenElement = null;
+              dispatchFullscreenChange(null);
+            }
+          }).catch(function() {});
+        }
+      });
+    }
+  });
+
+  console.log('[HLT] ✅ Fullscreen polyfill đã được cài đặt');
+})();
+"#;
+
 /// JavaScript toolbar được inject vào trang web https://littlecat.vn
 /// UI thân thiện với trẻ em 3-8 tuổi: button lớn, màu sắc vui, emoji
 const TOOLBAR_SCRIPT: &str = r#"
@@ -581,12 +713,27 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            // Lấy main window và inject toolbar script
-            if let Some(window) = app.get_webview_window("main") {
-                window
-                    .eval(TOOLBAR_SCRIPT)
-                    .unwrap_or_else(|e| log::error!("Lỗi inject toolbar script: {}", e));
-            }
+            // Tạo window bằng code để dùng được initialization_script,
+            // đảm bảo polyfill chạy trước mọi JS của trang web (kể cả khi navigate).
+            tauri::WebviewWindowBuilder::new(
+                app,
+                "main",
+                tauri::WebviewUrl::External("https://littlecat.vn".parse().unwrap()),
+            )
+            .title("Học Lồng Tiếng 🎬")
+            // Polyfill fullscreen chạy đầu tiên, trước cả JS của trang
+            .initialization_script(FULLSCREEN_POLYFILL)
+            // Toolbar quay màn hình
+            .initialization_script(TOOLBAR_SCRIPT)
+            .width(1280.0)
+            .height(800.0)
+            .min_width(1024.0)
+            .min_height(600.0)
+            .resizable(true)
+            .fullscreen(false)
+            .center()
+            .decorations(true)
+            .build()?;
 
             Ok(())
         })

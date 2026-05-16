@@ -7,21 +7,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "Học Lồng Tiếng 🎬",
-        "url": "https://littlecat.vn",
-        "width": 1280,
-        "height": 800,
-        "minWidth": 1024,
-        "minHeight": 600,
-        "resizable": true,
-        "fullscreen": false,
-        "center": true,
-        "decorations": true
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }
