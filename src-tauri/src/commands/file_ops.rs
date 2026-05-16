@@ -162,3 +162,12 @@ pub async fn get_file_size(path: String) -> Result<u64, String> {
         fs::metadata(&path).map_err(|e| format!("Không thể đọc thông tin file: {}", e))?;
     Ok(metadata.len())
 }
+
+/// Đọc file từ đường dẫn và trả về dạng base64.
+/// Dùng để WebView đọc file MP4 đã convert từ Tauri → tạo Blob → upload server.
+#[tauri::command]
+pub async fn read_file_as_base64(path: String) -> Result<String, String> {
+    let bytes =
+        fs::read(&path).map_err(|e| format!("Không thể đọc file '{}': {}", path, e))?;
+    Ok(BASE64.encode(&bytes))
+}

@@ -4,8 +4,8 @@ use tauri::Manager;
 
 use commands::convert::{check_ffmpeg, convert_video};
 use commands::file_ops::{
-    delete_temp_file, generate_filename, get_file_size, open_save_dialog, save_file_to_path,
-    save_temp_file,
+    delete_temp_file, generate_filename, get_file_size, open_save_dialog, read_file_as_base64,
+    save_file_to_path, save_temp_file,
 };
 
 /// Polyfill Fullscreen API cho WKWebView trên macOS.
@@ -748,6 +748,7 @@ pub fn run() {
             delete_temp_file,
             generate_filename,
             get_file_size,
+            read_file_as_base64,
         ])
         .run(tauri::generate_context!())
         .expect("Lỗi khởi động ứng dụng Học Lồng Tiếng");
