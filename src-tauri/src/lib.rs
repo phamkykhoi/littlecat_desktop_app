@@ -1,7 +1,5 @@
 mod commands;
 
-use tauri::Manager;
-
 use commands::convert::{check_ffmpeg, convert_video};
 use commands::file_ops::{
     delete_temp_file, generate_filename, get_file_size, open_save_dialog, read_file_as_base64,
@@ -866,10 +864,8 @@ pub fn run() {
             .initialization_script(FULLSCREEN_POLYFILL)
             // Toolbar quay màn hình
             .initialization_script(TOOLBAR_SCRIPT)
-            .width(1280.0)
-            .height(800.0)
-            .min_width(1024.0)
-            .min_height(600.0)
+            .inner_size(1280.0, 800.0)
+            .min_inner_size(1024.0, 600.0)
             .resizable(true)
             .fullscreen(false)
             .center()
