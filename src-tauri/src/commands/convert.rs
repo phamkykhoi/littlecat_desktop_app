@@ -54,11 +54,13 @@ pub async fn convert_video(
             "-vcodec",
             "libx264",
             "-crf",
-            "28",
+            "23",
             "-preset",
-            "medium",
+            "veryfast", // Nhanh hơn ~5x so với medium, file nhỉnh hơn chút nhưng chất lượng tốt
             "-acodec",
             "aac",
+            "-b:a",
+            "128k",
             "-movflags",
             "+faststart", // Tốt hơn để web playback
             "-y",         // Overwrite nếu tồn tại
