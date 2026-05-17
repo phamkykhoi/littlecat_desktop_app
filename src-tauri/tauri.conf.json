@@ -27,13 +27,7 @@
     ],
     "macOS": {
       "minimumSystemVersion": "10.15",
-      "entitlements": "entitlements.plist",
-      "infoPlistContent": {
-        "NSMicrophoneUsageDescription": "Học Lồng Tiếng cần micro để ghi âm tiếng lồng của bé.",
-        "NSCameraUsageDescription": "Học Lồng Tiếng cần camera để quay video lồng tiếng của bé.",
-        "NSDesktopFolderUsageDescription": "Học Lồng Tiếng cần truy cập thư mục để lưu video.",
-        "NSDocumentsFolderUsageDescription": "Học Lồng Tiếng cần truy cập thư mục Documents để lưu video."
-      }
+      "entitlements": "entitlements.plist"
     },
     "windows": {
       "certificateThumbprint": null,

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Bắt buộc để macOS hiện hộp thoại xin quyền micro/camera -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Học Lồng Tiếng cần micro để ghi âm tiếng lồng của bé.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>Học Lồng Tiếng cần camera để quay video lồng tiếng của bé.</string>
+    <!-- Quyền truy cập thư mục khi lưu video -->
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>Học Lồng Tiếng cần truy cập thư mục để lưu video lồng tiếng.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>Học Lồng Tiếng cần truy cập thư mục Documents để lưu video lồng tiếng.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>Học Lồng Tiếng cần truy cập thư mục Downloads để lưu video lồng tiếng.</string>
+  </dict>
+</plist>
